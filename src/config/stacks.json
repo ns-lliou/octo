@@ -13,5 +13,20 @@
         "k8s_klbi": "klbivip.hippo.sje011.netskope.com",
         "stack_cname": "hippo.local",
         "stack_fqdn_base": "hippo.local"
+    },
+    "fed1mp": {
+        "k8s_klbi": "klbivip-ext.c1.fed1mp.nc1.iad0.nsscloud.net",
+        "stack_cname": "fed1mp.nc1.iad0.nsscloud.net",
+        "stack_fqdn_base": "fed.boomskope.com"
+    },
+    "devint": {
+        "k8s_klbi": "klbivip-ext.c1.devint-automation.nc1.iad0.nsscloud.net",
+        "stack_cname": "devint-automation.nc1.iad0.nsscloud.net",
+        "stack_fqdn_base": "devint-automation.boomskope.com"
+    },
+    "perf01": {
+        "k8s_klbi": "klbivip-ext.c1.perf01-mp.nc6.iad0.nsscloud.net",
+        "stack_cname": "perf01-mp.nc6.iad0.nsscloud.net",
+        "stack_fqdn_base": "perf.boomskope.com"
     }
 }
