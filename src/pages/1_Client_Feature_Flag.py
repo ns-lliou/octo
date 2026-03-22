@@ -1,0 +1,84 @@
+import json
+import streamlit as st
+from api.client_feature_flag import get_feature_flags, set_feature_flag
+from config.paths import BASE_DIR
+
+
+with open(BASE_DIR / "config" / "stacks.json") as f:
+    env_config = json.load(f)
+
+# Setting page config and title
+st.set_page_config(page_title="Client Feature Flag")
+st.title("Manage Client (Tenant) Feature Flags")
+st.text("Use the sidebar to select environment, enter tenant ID, and manage feature flags.")
+
+with st.sidebar:
+    st.header("Controls")
+
+    env = st.selectbox("Environment", list(env_config.keys()))
+    tenant_id = st.text_input("Tenant ID")
+    flag = st.text_input("Feature Flag")
+    toggle = st.selectbox("Value", ["0", "1"])
+
+    selected_stack = env_config[env]
+    klbi = selected_stack["k8s_klbi"]
+
+    get_clicked = st.button("Get Feature Flags")
+    set_clicked = st.button("Set Feature Flag")
+
+if get_clicked:
+    if not tenant_id:
+        st.error("Please enter a Tenant ID.")
+        st.stop()
+
+    with st.spinner("Calling API..."):
+        response = get_feature_flags(klbi, tenant_id)
+
+    st.session_state.client_ff_get_response = {
+        "env": env,
+        "tenant_id": tenant_id,
+        "status_code": response.status_code,
+        "data": response.json(),
+    }
+
+if "client_ff_get_response" in st.session_state:
+    stored_resp_data = st.session_state.client_ff_get_response
+    st.write(f"Env: {stored_resp_data['env']}")
+    st.write(f"Tenant ID: {stored_resp_data['tenant_id']}")
+    st.caption(f"Status Code: {stored_resp_data['status_code']}")
+
+    search = st.text_input("Search flag...", key="client_ff_search")
+    flags_data = stored_resp_data["data"].get("data", stored_resp_data["data"])
+    if search:
+        flags_data = {k: v for k, v in flags_data.items() if search.lower() in k.lower()}
+        st.text("Search results for Feature Flags:")
+    st.json(flags_data)
+
+if set_clicked:
+    if not tenant_id:
+        st.error("Please enter a Tenant ID.")
+        st.stop()
+    if not flag:
+        st.error("Please enter a Feature Flag name.")
+        st.stop()
+
+    with st.spinner("Calling API..."):
+        response = set_feature_flag(klbi, tenant_id, flag, toggle)
+
+    st.session_state.client_ff_set_response = {
+        "env": env,
+        "tenant_id": tenant_id,
+        "flag": flag,
+        "value": toggle,
+        "status_code": response.status_code,
+        "data": response.json(),
+    }
+
+if "client_ff_set_response" in st.session_state:
+    stored_resp_data = st.session_state.client_ff_set_response
+    st.write(f"Env: {stored_resp_data['env']}")
+    st.write(f"Tenant ID: {stored_resp_data['tenant_id']}")
+    st.write(f"Flag: {stored_resp_data['flag']}")
+    st.write(f"Value: {stored_resp_data['value']}")
+    st.caption(f"Status Code: {stored_resp_data['status_code']}")
+    st.json(stored_resp_data["data"])

@@ -1,0 +1,17 @@
+{
+    "qa01": {
+        "k8s_klbi": "klbivip-ext.c1.qa01-mp-npe.nc1.iad0.nsscloud.net",
+        "stack_cname": "qa01-mp-npe.nc1.iad0.nsscloud.net",
+        "stack_fqdn_base": "qa.boomskope.com"
+    },
+    "stg01": {
+        "k8s_klbi": "klbivip-ext.c1.stg01-mp.nc4.iad0.nsscloud.net",
+        "stack_cname": "stg01-mp.nc4.iad0.nsscloud.net",
+        "stack_fqdn_base": "stg.boomskope.com"
+    },
+    "hippo": {
+        "k8s_klbi": "klbivip.hippo.sje011.netskope.com",
+        "stack_cname": "hippo.local",
+        "stack_fqdn_base": "hippo.local"
+    }
+}
