@@ -10,15 +10,20 @@ with open(BASE_DIR / "config" / "stacks.json") as f:
 # Setting page config and title
 st.set_page_config(page_title="Client Feature Flag")
 st.title("Manage Client (Tenant) Feature Flags")
-st.text("Use the sidebar to select environment, enter tenant ID, and manage feature flags.")
+st.markdown("""
+Use the **sidebar** to configure and manage feature flags:
+
+- **Get Feature Flags** — fetches all flags for a tenant. Optionally enter a _Feature Flag_ name to auto-filter the result.
+- **Set Feature Flag** — sets a specific flag to `0` or `1` for a tenant.
+""")
 
 with st.sidebar:
     st.header("Controls")
 
     env = st.selectbox("Environment", list(env_config.keys()))
     tenant_id = st.text_input("Tenant ID")
-    flag = st.text_input("Feature Flag")
-    toggle = st.selectbox("Value", ["0", "1"])
+    desired_flag = st.text_input("Feature Flag")
+    flag_value = st.selectbox("Value", ["0", "1"])
 
     selected_stack = env_config[env]
     klbi = selected_stack["k8s_klbi"]
@@ -26,12 +31,13 @@ with st.sidebar:
     get_clicked = st.button("Get Feature Flags")
     set_clicked = st.button("Set Feature Flag")
 
+# Get Feature Flag Logic
 if get_clicked:
     if not tenant_id:
         st.error("Please enter a Tenant ID.")
         st.stop()
 
-    with st.spinner("Calling API..."):
+    with st.spinner(f"Calling API to get feature flags for Tenant ID: {tenant_id}..."):
         response = get_feature_flags(klbi, tenant_id)
 
     st.session_state.client_ff_get_response = {
@@ -40,6 +46,8 @@ if get_clicked:
         "status_code": response.status_code,
         "data": response.json(),
     }
+    if desired_flag:
+        st.session_state["client_ff_search"] = desired_flag
 
 if "client_ff_get_response" in st.session_state:
     stored_resp_data = st.session_state.client_ff_get_response
@@ -50,26 +58,29 @@ if "client_ff_get_response" in st.session_state:
     search = st.text_input("Search flag...", key="client_ff_search")
     flags_data = stored_resp_data["data"].get("data", stored_resp_data["data"])
     if search:
-        flags_data = {k: v for k, v in flags_data.items() if search.lower() in k.lower()}
+        flags_data = {
+            k: v for k, v in flags_data.items() if search.lower() in k.lower()
+        }
         st.text("Search results for Feature Flags:")
     st.json(flags_data)
 
+# Set Feature Flag Logic
 if set_clicked:
     if not tenant_id:
         st.error("Please enter a Tenant ID.")
         st.stop()
-    if not flag:
+    if not desired_flag:
         st.error("Please enter a Feature Flag name.")
         st.stop()
 
-    with st.spinner("Calling API..."):
-        response = set_feature_flag(klbi, tenant_id, flag, toggle)
+    with st.spinner(f"Calling API to set feature flag '{desired_flag}' for Tenant ID: {tenant_id}..."):
+        response = set_feature_flag(klbi, tenant_id, desired_flag, flag_value)
 
     st.session_state.client_ff_set_response = {
         "env": env,
         "tenant_id": tenant_id,
-        "flag": flag,
-        "value": toggle,
+        "flag": desired_flag,
+        "value": flag_value,
         "status_code": response.status_code,
         "data": response.json(),
     }
