@@ -1,5 +1,6 @@
 import json
 import streamlit as st
+from api import APIRequestError, APIResponseError
 from api.client_feature_flag import get_feature_flags, set_feature_flag
 from config.paths import BASE_DIR
 
@@ -33,12 +34,22 @@ with st.sidebar:
 
 # Get Feature Flag Logic
 if get_clicked:
+    # Clear previous get response when clicking the button again
+    st.session_state.pop("client_ff_get_response", None)
+
     if not tenant_id:
         st.error("Please enter a Tenant ID.")
         st.stop()
 
-    with st.spinner(f"Calling API to get feature flags for Tenant ID: {tenant_id}..."):
-        response = get_feature_flags(klbi, tenant_id)
+    try:
+        with st.spinner(f"Calling API to get feature flags for Tenant ID: {tenant_id}..."):
+            response = get_feature_flags(klbi, tenant_id)
+    except APIRequestError as e:
+        st.error(f"Request failed: {e}")
+        st.stop()
+    except APIResponseError as e:
+        st.error(f"API error {e.status_code}: {e.body}")
+        st.stop()
 
     st.session_state.client_ff_get_response = {
         "env": env,
@@ -69,6 +80,9 @@ if "client_ff_get_response" in st.session_state:
 
 # Set Feature Flag Logic
 if set_clicked:
+    # Clear previous set response when clicking the button again
+    st.session_state.pop("client_ff_set_response", None)
+
     if not tenant_id:
         st.error("Please enter a Tenant ID.")
         st.stop()
@@ -76,8 +90,15 @@ if set_clicked:
         st.error("Please enter a Feature Flag name.")
         st.stop()
 
-    with st.spinner(f"Calling API to set feature flag '{desired_flag}' for Tenant ID: {tenant_id}..."):
-        response = set_feature_flag(klbi, tenant_id, desired_flag, flag_value)
+    try:
+        with st.spinner(f"Calling API to set feature flag '{desired_flag}' for Tenant ID: {tenant_id}..."):
+            response = set_feature_flag(klbi, tenant_id, desired_flag, flag_value)
+    except APIRequestError as e:
+        st.error(f"Request failed: {e}")
+        st.stop()
+    except APIResponseError as e:
+        st.error(f"API error {e.status_code}: {e.body}")
+        st.stop()
 
     st.session_state.client_ff_set_response = {
         "env": env,

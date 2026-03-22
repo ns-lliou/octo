@@ -1,23 +1,28 @@
 import requests
 
+from api import APIRequestError, APIResponseError
+
 HOST_HEADER = {"Host": "provisioner-pycore-provisioner-tm"}
 API_PATH = "/client/config"
 
 
+def _do_request(method: str, klbi: str, **kwargs) -> requests.Response:
+    try:
+        response = requests.request(method, url=f"http://{klbi}{API_PATH}", headers=HOST_HEADER, **kwargs)
+    except requests.exceptions.RequestException as e:
+        raise APIRequestError(str(e)) from e
+
+    if not response.ok:
+        raise APIResponseError(response.status_code, response.text)
+
+    return response
+
+
 def get_feature_flags(klbi: str, tenant_id: str) -> requests.Response:
-    return requests.get(
-        url=f"http://{klbi}{API_PATH}",
-        params={"tenantid": tenant_id},
-        headers=HOST_HEADER,
-    )
+    return _do_request("GET", klbi, params={"tenantid": tenant_id})
 
 
 def set_feature_flag(
     klbi: str, tenant_id: str, flag: str, value: str
 ) -> requests.Response:
-    return requests.post(
-        url=f"http://{klbi}{API_PATH}",
-        params={"tenantid": tenant_id},
-        headers=HOST_HEADER,
-        json={flag: value},
-    )
+    return _do_request("POST", klbi, params={"tenantid": tenant_id}, json={flag: value})
