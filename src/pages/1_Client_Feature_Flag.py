@@ -15,7 +15,7 @@ st.markdown("""
 Use the **sidebar** to configure and manage feature flags:
 
 - **Get Feature Flags** — fetches all flags for a tenant. Optionally enter a _Feature Flag_ name to auto-filter the result.
-- **Set Feature Flag** — sets a specific flag to `0` or `1` for a tenant.
+- **Set Feature Flag** — sets a specific flag to `0` (Disable), `1` (Enable) or a custom value for a tenant feature flag.
 """)
 
 with st.sidebar:
@@ -24,7 +24,8 @@ with st.sidebar:
     env = st.selectbox("Environment", list(env_config.keys()))
     tenant_id = st.text_input("Tenant ID")
     desired_flag = st.text_input("Feature Flag")
-    flag_value = st.selectbox("Value", ["0", "1"])
+    # flag_value = st.selectbox("Value", ["0", "1"])
+    flag_value = st.text_input("Value", help="Enter 0 (Disable), 1 (Enable) or a value depending on the flag. All values are treated as strings by the API.")
 
     selected_stack = env_config[env]
     klbi = selected_stack["k8s_klbi"]
@@ -66,6 +67,8 @@ if "client_ff_get_response" in st.session_state:
     st.write(f"- Stack Environment: {stored_resp_data['env']}")
     st.write(f"- Tenant ID: {stored_resp_data['tenant_id']}")
     st.caption(f"Status Code: {stored_resp_data['status_code']}")
+    st.write("Raw Response Data: (expand to view)")
+    st.json(stored_resp_data, expanded=False)
 
     search = st.text_input("Search flag...",
                            key="client_ff_search",
@@ -88,6 +91,9 @@ if set_clicked:
         st.stop()
     if not desired_flag:
         st.error("Please enter a Feature Flag name.")
+        st.stop()
+    if not flag_value:
+        st.error("Please enter a Value for the Feature Flag.")
         st.stop()
 
     try:
