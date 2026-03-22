@@ -51,11 +51,14 @@ if get_clicked:
 
 if "client_ff_get_response" in st.session_state:
     stored_resp_data = st.session_state.client_ff_get_response
-    st.write(f"Env: {stored_resp_data['env']}")
-    st.write(f"Tenant ID: {stored_resp_data['tenant_id']}")
+    st.write(f"### Get Feature Flag(s) Result:")
+    st.write(f"- Stack Environment: {stored_resp_data['env']}")
+    st.write(f"- Tenant ID: {stored_resp_data['tenant_id']}")
     st.caption(f"Status Code: {stored_resp_data['status_code']}")
 
-    search = st.text_input("Search flag...", key="client_ff_search")
+    search = st.text_input("Search flag...",
+                           key="client_ff_search",
+                           help="Enter a feature flag name to filter results, clear to show all.")
     flags_data = stored_resp_data["data"].get("data", stored_resp_data["data"])
     if search:
         flags_data = {
@@ -87,9 +90,10 @@ if set_clicked:
 
 if "client_ff_set_response" in st.session_state:
     stored_resp_data = st.session_state.client_ff_set_response
-    st.write(f"Env: {stored_resp_data['env']}")
-    st.write(f"Tenant ID: {stored_resp_data['tenant_id']}")
-    st.write(f"Flag: {stored_resp_data['flag']}")
-    st.write(f"Value: {stored_resp_data['value']}")
+    st.write(f"### Set Feature Flag Result:")
+    st.write(f"- Stack Environment: {stored_resp_data['env']}")
+    st.write(f"- Tenant ID: {stored_resp_data['tenant_id']}")
+    st.write(f"- Feature Flag: **{stored_resp_data['flag']}**")
+    st.write(f"- Value: **{stored_resp_data['value']}**")
     st.caption(f"Status Code: {stored_resp_data['status_code']}")
     st.json(stored_resp_data["data"])
