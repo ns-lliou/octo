@@ -2,6 +2,8 @@ import json
 import streamlit as st
 from api import APIRequestError, APIResponseError
 from api.dp_tenant_feature_flag import get_dp_tenant_feature_flags, set_dp_tenant_feature_flag
+from api.regenerate_proxy_config import regenerate_proxy_config
+from api.regenerate_dlp_config import regenerate_dlp_config
 from config.paths import BASE_DIR
 
 
@@ -16,6 +18,7 @@ Use the **sidebar** to configure and manage DP tenant feature flags:
 
 - **Get Feature Flags** — fetches all flags for a tenant at the DataPlane level. Optionally enter a _Feature Flag_ name to auto-filter the result.
 - **Set Feature Flag** — sends a JSON body to update one or more DP tenant flags. The entire JSON object is submitted as the request body.
+- **Regenerate Proxy/DLP Config** — triggers regeneration of the respective config, which is necessary for certain feature flag changes to take effect.
 """)
 
 with st.sidebar:
@@ -38,6 +41,10 @@ with st.sidebar:
         help="Input a valid JSON object. Each top-level key is a flag name, and its value is the flag configuration.",
     )
     set_clicked = st.button("Set Feature Flag")
+
+    st.divider()
+    regenerate_proxy_config_clicked = st.button("Regenerate Proxy Config")
+    regenerate_dlp_config_clicked = st.button("Regenerate DLP Config")
 
 # Get Feature Flag Logic
 if get_clicked:
@@ -136,3 +143,41 @@ if "dp_ff_set_response" in st.session_state:
     st.json(stored_resp_data["body"])
     st.caption(f"Status Code: {stored_resp_data['status_code']}")
     st.json(stored_resp_data["data"])
+
+# Regenerate Proxy Config Logic
+if regenerate_proxy_config_clicked:
+    if not tenant_id:
+        st.error("Please enter a Tenant ID.")
+        st.stop()
+    try:
+        with st.spinner("Calling API to regenerate proxy config..."):
+            response = regenerate_proxy_config(klbi, tenant_id)
+    except APIRequestError as e:
+        st.error(f"Request failed: {e}")
+        st.stop()
+    except APIResponseError as e:
+        st.error(f"API error {e.status_code}: {e.body}")
+        st.stop()
+
+    st.caption(f"Status Code: {response.status_code}")
+    st.json(response.json(), expanded=False)
+    st.success("Proxy config regeneration triggered successfully.")
+
+# Regenerate DLP Config Logic
+if regenerate_dlp_config_clicked:
+    if not tenant_id:
+        st.error("Please enter a Tenant ID.")
+        st.stop()
+    try:
+        with st.spinner("Calling API to regenerate DLP config..."):
+            response = regenerate_dlp_config(klbi, tenant_id)
+    except APIRequestError as e:
+        st.error(f"Request failed: {e}")
+        st.stop()
+    except APIResponseError as e:
+        st.error(f"API error {e.status_code}: {e.body}")
+        st.stop()
+
+    st.caption(f"Status Code: {response.status_code}")
+    st.json(response.json(), expanded=False)
+    st.success("DLP config regeneration triggered successfully.")
