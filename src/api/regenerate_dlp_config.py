@@ -1,6 +1,6 @@
 import requests
 
-from api.base import do_request
+from api.provisioner_base import do_request
 
 API_PATH = "/org/config/dlp/refresh"
 
