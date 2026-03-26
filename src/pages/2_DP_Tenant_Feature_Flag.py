@@ -11,7 +11,7 @@ with open(BASE_DIR / "config" / "stacks.json") as f:
     env_config = json.load(f)
 
 # Setting page config and title
-st.set_page_config(page_title="DP Tenant Feature Flag")
+st.set_page_config(page_title="DP Tenant Feature Flag", layout="wide")
 st.title("Manage DataPlane Tenant Feature Flags")
 st.markdown("""
 Use the **sidebar** to configure and manage DP tenant feature flags:

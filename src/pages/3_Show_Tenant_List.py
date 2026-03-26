@@ -9,7 +9,7 @@ from config.paths import BASE_DIR
 with open(BASE_DIR / "config" / "stacks.json") as f:
     env_config = json.load(f)
 
-st.set_page_config(page_title="Show Tenant List")
+st.set_page_config(page_title="Show Tenant List", layout="wide")
 st.title("Show Tenant List")
 st.markdown("""
 Use the **sidebar** to select an environment and load the tenant list. Loaded data is cached for the session — click **Load Tenants** again to refresh.
