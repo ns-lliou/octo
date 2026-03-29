@@ -80,8 +80,8 @@ with col_consumer:
     consumer_name = st.text_input("Consumer Name", key="consumer_name", help="Registered consumer name. e.g. rtp")
     consumer_id = st.text_input("Consumer ID", key="consumer_id", help="The ID (\"setting_id\") from List result to query its references.")
     btn_list_consumer, btn_get_consumer = st.columns(2)
-    list_consumer_clicked = btn_list_consumer.button("List", key="list_consumer", use_container_width=True)
-    get_consumer_clicked = btn_get_consumer.button("Get by ID", key="get_consumer", use_container_width=True)
+    list_consumer_clicked = btn_list_consumer.button("List", key="list_consumer", width="stretch")
+    get_consumer_clicked = btn_get_consumer.button("Get by ID", key="get_consumer", width="stretch")
 
     # ── Handle button clicks: fetch and store in session_state ────────────────
     if list_consumer_clicked:
@@ -133,7 +133,7 @@ with col_consumer:
         result = st.session_state["ris_consumer_list"]
         st.caption(f"Total: **{result['total']}**")
         if result["rows"]:
-            st.dataframe(result["rows"], use_container_width=True, hide_index=True)
+            st.dataframe(result["rows"], width="stretch", hide_index=True)
         else:
             st.info("No entries found.")
 
@@ -141,7 +141,7 @@ with col_consumer:
         result = st.session_state["ris_consumer_detail"]
         st.caption(result["caption"])
         if result["rows"]:
-            st.dataframe(result["rows"], use_container_width=True, hide_index=True)
+            st.dataframe(result["rows"], width="stretch", hide_index=True)
         else:
             st.info("No references found.")
         with st.expander("Full JSON"):
@@ -154,8 +154,8 @@ with col_object:
     object_name = st.text_input("Object Name", key="object_name", help="Registered config object name. e.g. destination")
     object_id = st.text_input("Object ID", key="object_id", help="The ID (\"id\") from List result to query its references.")
     btn_list_object, btn_get_object = st.columns(2)
-    list_object_clicked = btn_list_object.button("List", key="list_object", use_container_width=True)
-    get_object_clicked = btn_get_object.button("Get by ID", key="get_object", use_container_width=True)
+    list_object_clicked = btn_list_object.button("List", key="list_object", width="stretch")
+    get_object_clicked = btn_get_object.button("Get by ID", key="get_object", width="stretch")
 
     # ── Handle button clicks: fetch and store in session_state ────────────────
     if list_object_clicked:
@@ -207,7 +207,7 @@ with col_object:
         result = st.session_state["ris_object_list"]
         st.caption(f"Total: **{result['total']}**")
         if result["rows"]:
-            st.dataframe(result["rows"], use_container_width=True, hide_index=True)
+            st.dataframe(result["rows"], width="stretch", hide_index=True)
         else:
             st.info("No entries found.")
 
@@ -215,7 +215,7 @@ with col_object:
         result = st.session_state["ris_object_detail"]
         st.caption(result["caption"])
         if result["rows"]:
-            st.dataframe(result["rows"], use_container_width=True, hide_index=True)
+            st.dataframe(result["rows"], width="stretch", hide_index=True)
         else:
             st.info("No references found.")
         with st.expander("Full JSON"):

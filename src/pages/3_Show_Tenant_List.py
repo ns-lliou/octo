@@ -79,7 +79,7 @@ if cache_key in st.session_state:
             "hashkey", "TenantIDHash", "create_time",
         ]
         cols = [c for c in preferred_cols if c in df.columns]
-        st.dataframe(df[cols], use_container_width=True, hide_index=True)
+        st.dataframe(df[cols], width="stretch", hide_index=True)
 
         if search:
             st.subheader("Filtered Tenant(s) — Full Detail")
