@@ -1,6 +1,6 @@
 # 🐙 Octo
 
-SWG Internal tooling for managing backend configurations across environments.
+SWG internal tooling for managing backend configurations across environments.
 
 ## Features
 

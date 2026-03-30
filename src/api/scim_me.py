@@ -262,31 +262,3 @@ def revoke_api_token(hostname: str, ci_session: str) -> requests.Response:
         raise APIResponseError(response.status_code, response.text)
 
     return response
-
-
-# Test Code
-if __name__ == "__main__":
-    hostname = "hornet-01-stg01.stg.boomskope.com"
-    ci_session = "bnNtZW1jYWNoZWQ61IKM6K6OorYHE4jPW4uSUVPOexbh97V"
-
-    get_me_response = get_scim_me(hostname, ci_session)
-    print(get_me_response.json())
-
-    get_api_token_response = generate_api_token(hostname, ci_session, expire_in_days=1)
-    print(
-        "New API token value (only available in this response, won't be retrievable again):"
-    )
-    print(
-        get_api_token_response.json()["urn:ietf:params:scim:schemas:netskope:2.0:User"][
-            "apiAccessToken"
-        ]["value"]
-    )
-
-    get_me_response = get_scim_me(hostname, ci_session)
-    print(get_me_response.json())
-
-    revoke_api_token_response = revoke_api_token(hostname, ci_session)
-    print(
-        "API token revoked, check response to confirm the apiAccessToken object is removed:"
-    )
-    print(revoke_api_token_response.json())
