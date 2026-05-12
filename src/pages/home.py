@@ -1,6 +1,6 @@
 import streamlit as st
 
-__version__ = "2026.03"
+__version__ = "2026.05"
 
 st.set_page_config(page_title="Octo - Home", layout="wide")
 st.title("🐙 Octo")
