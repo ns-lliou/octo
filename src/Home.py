@@ -5,6 +5,7 @@ pg = st.navigation({
         st.Page("pages/home.py", title="Home"),
     ],
     "Tenant Management": [
+        st.Page("pages/create_tenant.py", title="Create Tenant"),
         st.Page("pages/show_tenant_list.py", title="Show Tenant List"),
         st.Page("pages/client_feature_flag.py", title="Client Feature Flag"),
         st.Page("pages/dp_tenant_feature_flag.py", title="DP Tenant Feature Flag"),
