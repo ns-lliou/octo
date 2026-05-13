@@ -25,6 +25,15 @@ fi
 
 echo "Using Python: $($PYTHON_CMD --version)"
 
+# Enforce minimum Python version (3.10+ required for union type syntax)
+PYTHON_VERSION=$("$PYTHON_CMD" -c "import sys; print(f'{sys.version_info.major}.{sys.version_info.minor}')")
+PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
+PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
+if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 10 ]; }; then
+    echo "ERROR: Python 3.10 or higher is required (found $PYTHON_VERSION)."
+    exit 1
+fi
+
 # Create venv if missing
 if [ ! -d "$VENV_DIR" ]; then
     echo "Creating virtual environment: $VENV_DIR"
