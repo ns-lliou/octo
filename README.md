@@ -1,6 +1,6 @@
 # 🐙 Octo
 
-SWG internal tooling for managing backend configurations across environments.
+SWG internal tooling for managing backend configurations across environments, built with [Streamlit](https://streamlit.io).
 
 ## Features
 
@@ -49,6 +49,11 @@ Windows (PowerShell):
 ```
 
 The script creates a virtual environment, installs dependencies, and launches the app automatically.
+
+> **Windows note:** If PowerShell blocks the script, run the following once before retrying:
+> ```powershell
+> Set-ExecutionPolicy -Scope CurrentUser -ExecutionPolicy RemoteSigned
+> ```
 
 ## Project Structure
 
