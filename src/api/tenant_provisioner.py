@@ -1,4 +1,5 @@
 import json
+import re
 import subprocess
 from typing import Any
 
@@ -8,8 +9,12 @@ TSH_CLUSTER = "iad0"
 GSLB_DNS_URL = "https://gslb-dns-v2-npe.polaris.netskope.io/api/v0.1/dns/sync/zone/boomskope.com"
 
 
-def _run_on_knode(knode: str, curl_cmd: str) -> tuple[int, str]:
-    """Run a curl command on a remote knode via tsh ssh. Returns (exit_code, stdout)."""
+def _run_on_knode(knode: str, curl_cmd: str) -> str:
+    """Run a curl command on a remote knode via tsh ssh. Returns stdout on success.
+
+    Raises APIRequestError if tsh exits non-zero (VPN down, Teleport session expired,
+    unreachable knode, etc.) so callers always receive clean curl output.
+    """
     tsh_cmd = ["tsh", "ssh", "--cluster", TSH_CLUSTER, "--skip-version-check", knode, "bash", "-s"]
     try:
         result = subprocess.run(
@@ -19,7 +24,16 @@ def _run_on_knode(knode: str, curl_cmd: str) -> tuple[int, str]:
             text=True,
             timeout=1200,
         )
-        return result.returncode, result.stdout + result.stderr
+        if result.returncode != 0:
+            raw_output = re.sub(r"\x1b\[[0-9;]*m", "", (result.stderr or result.stdout))
+            # Strip tsh browser-open lines (local proxy auth callbacks) — only keep ERROR: lines
+            lines = [l for l in raw_output.splitlines() if not l.strip().startswith("If browser window")]
+            tsh_output = " ".join(l.strip() for l in lines if l.strip())
+            raise APIRequestError(
+                f"[tsh] Failed to connect to {knode} (exit {result.returncode})"
+                + (f": {tsh_output}" if tsh_output else " — check VPN and Teleport session")
+            )
+        return result.stdout
     except subprocess.TimeoutExpired as e:
         raise APIRequestError(f"tsh ssh timed out connecting to {knode}") from e
     except FileNotFoundError as e:
@@ -34,15 +48,24 @@ def _parse_response(raw: str, knode: str, operation: str) -> dict[str, Any]:
     if not lines:
         raise APIResponseError(0, f"[{operation}] Empty response from {knode}")
 
-    # Last line is the HTTP status code (from curl -w "%{http_code}")
-    status_line = lines[-1].strip()
-    body = "\n".join(lines[:-1]).strip()
+    # Scan from the end for the HTTP status code written by curl -w "%{http_code}".
+    # tsh may append auth/browser-open noise after the status code line (e.g. when
+    # an Okta or Teleport session expires mid-run), so we can't assume lines[-1] is
+    # the status. We find the last line whose leading 3 chars are a valid HTTP code.
+    status_code = None
+    body_end = len(lines)
+    for i in range(len(lines) - 1, -1, -1):
+        prefix = lines[i].strip()[:3]
+        if prefix.isdigit() and 100 <= int(prefix) <= 599:
+            status_code = int(prefix)
+            body_end = i
+            break
 
-    try:
-        status_code = int(status_line)
-    except ValueError:
-        # curl didn't reach the server; the whole output is an error message
+    if status_code is None:
+        # tsh/curl never reached the server — entire output is an error message
         raise APIRequestError(f"[{operation}] curl failed on {knode}: {raw.strip()}")
+
+    body = "\n".join(lines[:body_end]).strip()
 
     if status_code not in (200, 201, 202, 204):
         raise APIResponseError(status_code, f"[{operation}] {body}")
@@ -55,6 +78,11 @@ def _parse_response(raw: str, knode: str, operation: str) -> dict[str, Any]:
         return {"_raw": body}
 
 
+def ping_knode(knode: str) -> None:
+    """Verify tsh can reach the knode. Raises APIRequestError if the session is expired or unreachable."""
+    _run_on_knode(knode, "echo ok")
+
+
 def create_tenant(knode: str, payload: dict[str, Any]) -> dict[str, Any]:
     payload_json = json.dumps(payload)
     curl = (
@@ -63,10 +91,7 @@ def create_tenant(knode: str, payload: dict[str, Any]) -> dict[str, Any]:
         f"-d '{payload_json}' "
         f"http://tenant-provisioner/rest/create/org"
     )
-    rc, raw = _run_on_knode(knode, curl)
-    if rc != 0 and not raw.strip():
-        raise APIRequestError(f"tsh ssh exited {rc} with no output for knode {knode}")
-    return _parse_response(raw, knode, "create_tenant")
+    return _parse_response(_run_on_knode(knode, curl), knode, "create_tenant")
 
 
 def refresh_cluster_mapping(knode: str) -> dict[str, Any]:
@@ -75,10 +100,7 @@ def refresh_cluster_mapping(knode: str) -> dict[str, Any]:
         "-H 'Content-Type: application/json' "
         "http://provisioner-pycore-provisioner/clustermapping/refresh"
     )
-    rc, raw = _run_on_knode(knode, curl)
-    if rc != 0 and not raw.strip():
-        raise APIRequestError(f"tsh ssh exited {rc} with no output for knode {knode}")
-    return _parse_response(raw, knode, "refresh_cluster_mapping")
+    return _parse_response(_run_on_knode(knode, curl), knode, "refresh_cluster_mapping")
 
 
 def sync_dns(knode: str, fqdn: str, home_pop: str) -> dict[str, Any]:
@@ -89,10 +111,7 @@ def sync_dns(knode: str, fqdn: str, home_pop: str) -> dict[str, Any]:
         f"-d '{body}' "
         f"'{GSLB_DNS_URL}'"
     )
-    rc, raw = _run_on_knode(knode, curl)
-    if rc != 0 and not raw.strip():
-        raise APIRequestError(f"tsh ssh exited {rc} with no output for knode {knode}")
-    return _parse_response(raw, knode, "sync_dns")
+    return _parse_response(_run_on_knode(knode, curl), knode, "sync_dns")
 
 
 def get_admin_uuid(knode: str, ms_platform_fqdn: str, admin_email: str, tenant_id: str) -> str:
@@ -106,10 +125,7 @@ def get_admin_uuid(knode: str, ms_platform_fqdn: str, admin_email: str, tenant_i
         f"-H 'x-netskope-user-id: dummy@netskope.com' "
         f"-H 'x-netskope-user-role-id: 1'"
     )
-    rc, raw = _run_on_knode(knode, curl)
-    if rc != 0 and not raw.strip():
-        raise APIRequestError(f"tsh ssh exited {rc} with no output for knode {knode}")
-    data = _parse_response(raw, knode, "get_admin_uuid")
+    data = _parse_response(_run_on_knode(knode, curl), knode, "get_admin_uuid")
     resources = data.get("Resources", [])
     if not resources:
         raise APIResponseError(404, f"No user found for email {admin_email} in tenant {tenant_id}")
@@ -138,7 +154,4 @@ def send_verification_email(knode: str, ms_platform_fqdn: str, user_uuid: str, t
         f"-H 'Content-Type: application/json' "
         f"-d '{body}'"
     )
-    rc, raw = _run_on_knode(knode, curl)
-    if rc != 0 and not raw.strip():
-        raise APIRequestError(f"tsh ssh exited {rc} with no output for knode {knode}")
-    return _parse_response(raw, knode, "send_verification_email")
+    return _parse_response(_run_on_knode(knode, curl), knode, "send_verification_email")

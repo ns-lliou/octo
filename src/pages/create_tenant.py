@@ -11,6 +11,7 @@ from api import APIRequestError, APIResponseError
 from api.tenant_provisioner import (
     create_tenant,
     get_admin_uuid,
+    ping_knode,
     refresh_cluster_mapping,
     send_verification_email,
     sync_dns,
@@ -373,6 +374,12 @@ if mode == "Single":
         st.session_state.pop("create_tenant_artifact_path", None)
 
         st.warning("⏳ **Tenant provisioning typically takes about 5 to 10 minutes.** Please KEEP THIS TAB OPEN and DO NOT REFRESH — results will appear automatically when done.")
+        try:
+            with st.spinner(f"Checking tsh connectivity to {pending['knode']}..."):
+                ping_knode(pending["knode"])
+        except APIRequestError as e:
+            st.error(f"**tsh preflight failed — provisioning aborted.**\n\n{e}\n\nPlease run `tsh login` to refresh your Teleport session and try again.")
+            st.stop()
         with st.spinner(f"Running tenant provisioning steps on {pending['knode']}..."):
             result = _run_single(pending["knode"], stack, env, pending["payload"], pending["admin_email"])
 
@@ -460,6 +467,12 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
         st.session_state.pop("create_tenant_artifact_path", None)
 
         st.warning(f"⏳ **Running {len(payloads)} tenant(s) sequentially — each takes 5–7 minutes.** Estimated total: {len(payloads) * 6}–{len(payloads) * 8} minutes. Keep this tab open and do not refresh.")
+        try:
+            with st.spinner(f"Checking tsh connectivity to {pending['knode']}..."):
+                ping_knode(pending["knode"])
+        except APIRequestError as e:
+            st.error(f"**tsh preflight failed — batch aborted.**\n\n{e}\n\nPlease run `tsh login` to refresh your Teleport session and try again.")
+            st.stop()
 
         results: list[dict[str, Any]] = []
         progress = st.progress(0, text="Starting...")
