@@ -15,8 +15,11 @@ $PythonCmd = $null
 
 foreach ($cmd in @("python3.12", "python3.11", "python3.10", "python3", "python", "py")) {
     if (Get-Command $cmd -ErrorAction SilentlyContinue) {
-        $PythonCmd = $cmd
-        break
+        $testOutput = & $cmd -c "import sys; print(sys.version_info.major)" 2>$null
+        if ($testOutput -match '^\d+$') {
+            $PythonCmd = $cmd
+            break
+        }
     }
 }
 
