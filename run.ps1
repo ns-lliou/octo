@@ -33,7 +33,7 @@ $VersionParts = $PythonVersion.Split('.')
 $Major = [int]$VersionParts[0]
 $Minor = [int]$VersionParts[1]
 if ($Major -lt 3 -or ($Major -eq 3 -and $Minor -lt 10)) {
-    Write-Host "ERROR: Python 3.10 or higher is required (found $PythonVersion)."
+    Write-Host "ERROR: Python 3.10 or higher is required (found $PythonVersion). Install it from https://www.python.org/downloads/"
     exit 1
 }
 

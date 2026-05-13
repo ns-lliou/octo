@@ -30,7 +30,7 @@ PYTHON_VERSION=$("$PYTHON_CMD" -c "import sys; print(f'{sys.version_info.major}.
 PYTHON_MAJOR=$(echo "$PYTHON_VERSION" | cut -d. -f1)
 PYTHON_MINOR=$(echo "$PYTHON_VERSION" | cut -d. -f2)
 if [ "$PYTHON_MAJOR" -lt 3 ] || { [ "$PYTHON_MAJOR" -eq 3 ] && [ "$PYTHON_MINOR" -lt 10 ]; }; then
-    echo "ERROR: Python 3.10 or higher is required (found $PYTHON_VERSION)."
+    echo "ERROR: Python 3.10 or higher is required (found $PYTHON_VERSION). Install it via Homebrew: brew install python@3.12"
     exit 1
 fi
 
