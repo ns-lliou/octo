@@ -10,16 +10,17 @@ Write-Host "========================================"
 # Move to script directory so the script works from any current path
 Set-Location $PSScriptRoot
 
-# Pick Python command
+# Pick Python command — prefer versioned executables to avoid system Python
 $PythonCmd = $null
 
-if (Get-Command python -ErrorAction SilentlyContinue) {
-    $PythonCmd = "python"
+foreach ($cmd in @("python3.12", "python3.11", "python3.10", "python3", "python", "py")) {
+    if (Get-Command $cmd -ErrorAction SilentlyContinue) {
+        $PythonCmd = $cmd
+        break
+    }
 }
-elseif (Get-Command py -ErrorAction SilentlyContinue) {
-    $PythonCmd = "py"
-}
-else {
+
+if ($null -eq $PythonCmd) {
     Write-Host "ERROR: Python is not installed or not found in PATH."
     exit 1
 }

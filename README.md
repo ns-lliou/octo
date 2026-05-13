@@ -32,15 +32,23 @@ Generate or revoke the API token for a tenant web UI user. Requires logging in t
 
 ## Getting Started
 
-**Install dependencies:**
-```bash
-pip install -r requirements.txt
-```
+**Prerequisites:** Python 3.10 or higher.
+- macOS: `brew install python@3.11`
+- Windows: [python.org/downloads](https://www.python.org/downloads/)
 
 **Run the app:**
+
+macOS/Linux:
 ```bash
-streamlit run src/Home.py
+./run.sh
 ```
+
+Windows (PowerShell):
+```powershell
+.\run.ps1
+```
+
+The script creates a virtual environment, installs dependencies, and launches the app automatically.
 
 ## Project Structure
 

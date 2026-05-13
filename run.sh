@@ -13,12 +13,16 @@ echo "========================================"
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 cd "$SCRIPT_DIR"
 
-# Pick Python command
-if command -v python3 >/dev/null 2>&1; then
-    PYTHON_CMD="python3"
-elif command -v python >/dev/null 2>&1; then
-    PYTHON_CMD="python"
-else
+# Pick Python command — prefer versioned executables to avoid system Python
+PYTHON_CMD=""
+for cmd in python3.12 python3.11 python3.10 python3 python; do
+    if command -v "$cmd" >/dev/null 2>&1; then
+        PYTHON_CMD="$cmd"
+        break
+    fi
+done
+
+if [ -z "$PYTHON_CMD" ]; then
     echo "ERROR: Python is not installed or not found in PATH."
     exit 1
 fi
