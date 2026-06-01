@@ -5,3 +5,5 @@ __pycache__/
 artifacts/
 .DS_Store
 src/config/stacks_local.json
+CLAUDE.md
+.claude/
