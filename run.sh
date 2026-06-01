@@ -60,6 +60,14 @@ else
     echo "WARNING: requirements.txt not found. Skipping dependency installation."
 fi
 
+# Install internal Netskope packages (requires Artifactory access)
+if [ -f "requirements_local.txt" ]; then
+    echo "Installing internal dependencies from requirements_local.txt..."
+    pip install --no-cache-dir -r requirements_local.txt \
+        --index-url https://artifactory-rd.netskope.io/artifactory/api/pypi/ns-pypi/simple \
+        || echo "WARNING: Failed to install requirements_local.txt — skipping (may not be on Netskope network)"
+fi
+
 # Validate app entry
 if [ ! -f "$APP_ENTRY" ]; then
     echo "ERROR: Cannot find $APP_ENTRY"

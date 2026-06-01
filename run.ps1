@@ -75,6 +75,17 @@ else {
     Write-Host "WARNING: requirements.txt not found. Skipping dependency installation."
 }
 
+# Install internal Netskope packages (requires Artifactory access)
+if (Test-Path "requirements_local.txt") {
+    Write-Host "Installing internal dependencies from requirements_local.txt..."
+    try {
+        pip install --no-cache-dir -r requirements_local.txt `
+            --index-url https://artifactory-rd.netskope.io/artifactory/api/pypi/ns-pypi/simple
+    } catch {
+        Write-Host "WARNING: Failed to install requirements_local.txt — skipping (may not be on Netskope network)"
+    }
+}
+
 # Validate app entry
 if (-Not (Test-Path $AppEntry)) {
     Write-Host "ERROR: Cannot find $AppEntry"
