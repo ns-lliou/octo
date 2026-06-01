@@ -1,0 +1,14 @@
+{
+    "qa01": {
+        "mariadb_user": "webui",
+        "mariadb_password": "<password>"
+    },
+    "stg01": {
+        "mariadb_user": "webui",
+        "mariadb_password": "<password>"
+    },
+    "hippo": {
+        "mariadb_user": "provisioner",
+        "mariadb_password": "<password>"
+    }
+}

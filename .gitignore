@@ -4,3 +4,4 @@ __pycache__/
 .streamlit/
 artifacts/
 .DS_Store
+src/config/stacks_local.json
