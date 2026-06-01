@@ -8,6 +8,7 @@ from typing import Any
 import streamlit as st
 
 from api import APIRequestError, APIResponseError
+from api.admin_activator import activate_admin_mariadb, activate_admin_postgres, is_aws_migrated
 from api.tenant_provisioner import (
     create_tenant,
     get_admin_uuid,
@@ -97,6 +98,19 @@ def _build_payload(td: dict[str, Any], fqdn_base: str) -> dict[str, Any]:
     }
 
 
+def _activate_admin(env: str, stack: dict, admin_uuid: str, admin_email: str, tenant_hostname: str, admin_password: str) -> dict[str, Any]:
+    """Detect AWS-migration status and run the correct Step 5 activation path."""
+    mariadb_host = stack.get("mariadb_host", "")
+    if not mariadb_host:
+        raise APIRequestError(f"No mariadb_host configured for stack '{env}' in stacks.json")
+
+    migrated = is_aws_migrated(env, mariadb_host, tenant_hostname)
+    if migrated:
+        return activate_admin_postgres(env, admin_uuid, admin_password)
+    else:
+        return activate_admin_mariadb(env, mariadb_host, tenant_hostname, admin_email, admin_password)
+
+
 def _save_artifact(results: list[dict[str, Any]], env: str) -> Path:
     ts = datetime.now().strftime("%Y%m%d_%H%M%S")
     path = ARTIFACTS_DIR / f"create_tenant_{env}_{ts}.json"
@@ -104,7 +118,7 @@ def _save_artifact(results: list[dict[str, Any]], env: str) -> Path:
     return path
 
 
-def _run_single(knode: str, stack: dict, env: str, payload: dict[str, Any], admin_email: str) -> dict[str, Any]:
+def _run_single(knode: str, stack: dict, env: str, payload: dict[str, Any], admin_email: str, admin_password: str = "") -> dict[str, Any]:
     """Execute all 4 provisioning steps for one tenant. Returns a result record."""
     result: dict[str, Any] = {
         "hostname": payload.get("hostname"),
@@ -191,18 +205,31 @@ def _run_single(knode: str, stack: dict, env: str, payload: dict[str, Any], admi
     else:
         result["steps"]["4a_get_admin_uuid"] = {"status": "ok_cached", "uuid": admin_uuid}
 
-    # Step 4b: Send verification email
-    try:
-        data = send_verification_email(knode, stack["ms_platform_fqdn"], admin_uuid, tenant_id)
-        result["steps"]["4b_send_verification_email"] = {"status": "ok", "response": data}
-    except (APIRequestError, APIResponseError) as e:
-        err_str = str(e)
-        # 400 "already verified" is not a real failure — tenant is usable
-        if "already verified" in err_str.lower():
-            result["steps"]["4b_send_verification_email"] = {"status": "already_verified", "note": err_str}
-        else:
-            result["steps"]["4b_send_verification_email"] = {"status": "error", "error": err_str}
-            result["overall_status"] = "failed_at_step_4b"
+    # Step 4b: Send verification email (skipped when admin_password is set — SQL activation replaces it)
+    if admin_password:
+        result["steps"]["4b_send_verification_email"] = {"status": "skipped", "note": "SQL activation will be used instead"}
+    else:
+        try:
+            data = send_verification_email(knode, stack["ms_platform_fqdn"], admin_uuid, tenant_id)
+            result["steps"]["4b_send_verification_email"] = {"status": "ok", "response": data}
+        except (APIRequestError, APIResponseError) as e:
+            err_str = str(e)
+            # 400 "already verified" is not a real failure — tenant is usable
+            if "already verified" in err_str.lower():
+                result["steps"]["4b_send_verification_email"] = {"status": "already_verified", "note": err_str}
+            else:
+                result["steps"]["4b_send_verification_email"] = {"status": "error", "error": err_str}
+                result["overall_status"] = "failed_at_step_4b"
+                return result
+
+    # Step 5: Activate admin via SQL (auto-detects Postgres vs MariaDB path)
+    if admin_password:
+        try:
+            data = _activate_admin(env, stack, admin_uuid, admin_email, payload["hostname"], admin_password)
+            result["steps"]["5_activate_admin"] = {"status": "ok", "response": data}
+        except (APIRequestError, APIResponseError) as e:
+            result["steps"]["5_activate_admin"] = {"status": "error", "error": str(e)}
+            result["overall_status"] = "failed_at_step_5"
             return result
 
     result["overall_status"] = "incomplete" if step1_incomplete else "success"
@@ -231,11 +258,13 @@ def _display_result(result: dict[str, Any], index: int | None = None) -> None:
 
         for step_key, step_data in result.get("steps", {}).items():
             step_status = step_data.get("status", "unknown")
-            step_icon = "⚠️" if "warning" in step_data else ("✅" if step_status in ("ok", "ok_cached", "already_verified") else "❌")
+            step_icon = "⚠️" if "warning" in step_data else ("✅" if step_status in ("ok", "ok_cached", "already_verified") else ("⏭️" if step_status == "skipped" else "❌"))
             st.markdown(f"**{step_icon} {step_key}**")
 
             if step_status == "error":
                 st.error(step_data.get("error"))
+            if step_status == "skipped":
+                st.caption(step_data.get("note", "Skipped"))
             if step_status == "already_verified":
                 st.info(step_data.get("note"))
             if "warning" in step_data:
@@ -306,6 +335,13 @@ if mode == "Single":
         cust_lname = st.text_input("Last Name", placeholder="Doe")
         domains_input = st.text_input("Domains (comma-separated)", value=stack["stack_fqdn_base"])
 
+    admin_password = st.text_input(
+        "Admin Password (optional)",
+        placeholder="Leave blank to send verification email instead",
+        type="password",
+        help="If provided, the admin account is activated directly via SQL — no email click required. Leave blank to use the standard email verification flow.",
+    )
+
     with st.expander("Advanced / Optional fields"):
         org_desc = st.text_input("Org Description", value="SWG QE")
         country = st.text_input("Country", value="US")
@@ -361,6 +397,7 @@ if mode == "Single":
             "fqdn_base": stack["stack_fqdn_base"],
             "payload": payload,
             "admin_email": admin_email,
+            "admin_password": admin_password,
         }
 
     if st.session_state.get("_preflight_pending", {}).get("mode") == "Single":
@@ -381,7 +418,7 @@ if mode == "Single":
             st.error(f"**tsh preflight failed — provisioning aborted.**\n\n{e}\n\nPlease run `tsh login` to refresh your Teleport session and try again.")
             st.stop()
         with st.spinner(f"Running tenant provisioning steps on {pending['knode']}..."):
-            result = _run_single(pending["knode"], stack, env, pending["payload"], pending["admin_email"])
+            result = _run_single(pending["knode"], stack, env, pending["payload"], pending["admin_email"], pending.get("admin_password", ""))
 
         st.session_state["create_tenant_last_results"] = [result]
         artifact_path = _save_artifact([result], env)
@@ -421,6 +458,12 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
 """)
 
     batch_input = st.text_area("Tenant JSON Array", height=200, placeholder='[{"hostname": "...", ...}]')
+    admin_password = st.text_input(
+        "Admin Password (optional)",
+        placeholder="Leave blank to send verification email instead",
+        type="password",
+        help="If provided, the admin account is activated directly via SQL — no email click required. Leave blank to use the standard email verification flow.",
+    )
     run_batch_clicked = st.button("Run Batch", type="primary", disabled=bool(st.session_state.get("_preflight_pending")))
 
     if run_batch_clicked:
@@ -452,6 +495,7 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
             "fqdn_base": stack["stack_fqdn_base"],
             "payloads": payloads,
             "admin_emails": admin_emails,
+            "admin_password": admin_password,
         }
 
     if st.session_state.get("_preflight_pending", {}).get("mode") == "Batch":
@@ -582,18 +626,34 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
             else:
                 r["steps"]["4a_get_admin_uuid"] = {"status": "ok_cached", "uuid": admin_uuid}
 
-            # Step 4b: Send verification email
-            status_placeholder.write(f"Step 4b [{i+1}/{len(create_results)}]: Sending verification email for tenant `{tenant_id}`...")
-            try:
-                data = send_verification_email(knode, stack["ms_platform_fqdn"], admin_uuid, tenant_id)
-                r["steps"]["4b_send_verification_email"] = {"status": "ok", "response": data}
-            except (APIRequestError, APIResponseError) as e:
-                err_str = str(e)
-                if "already verified" in err_str.lower():
-                    r["steps"]["4b_send_verification_email"] = {"status": "already_verified", "note": err_str}
-                else:
-                    r["steps"]["4b_send_verification_email"] = {"status": "error", "error": err_str}
-                    r["overall_status"] = "failed_at_step_4b"
+            # Step 4b: Send verification email (skipped when admin_password is set)
+            batch_password = pending.get("admin_password", "")
+            if batch_password:
+                r["steps"]["4b_send_verification_email"] = {"status": "skipped", "note": "SQL activation will be used instead"}
+            else:
+                status_placeholder.write(f"Step 4b [{i+1}/{len(create_results)}]: Sending verification email for tenant `{tenant_id}`...")
+                try:
+                    data = send_verification_email(knode, stack["ms_platform_fqdn"], admin_uuid, tenant_id)
+                    r["steps"]["4b_send_verification_email"] = {"status": "ok", "response": data}
+                except (APIRequestError, APIResponseError) as e:
+                    err_str = str(e)
+                    if "already verified" in err_str.lower():
+                        r["steps"]["4b_send_verification_email"] = {"status": "already_verified", "note": err_str}
+                    else:
+                        r["steps"]["4b_send_verification_email"] = {"status": "error", "error": err_str}
+                        r["overall_status"] = "failed_at_step_4b"
+                        results.append(r)
+                        continue
+
+            # Step 5: Activate admin via SQL (auto-detects Postgres vs MariaDB path)
+            if batch_password:
+                status_placeholder.write(f"Step 5 [{i+1}/{len(create_results)}]: Activating admin for tenant `{tenant_id}`...")
+                try:
+                    data = _activate_admin(env, stack, admin_uuid, admin_email, r["hostname"], batch_password)
+                    r["steps"]["5_activate_admin"] = {"status": "ok", "response": data}
+                except (APIRequestError, APIResponseError) as e:
+                    r["steps"]["5_activate_admin"] = {"status": "error", "error": str(e)}
+                    r["overall_status"] = "failed_at_step_5"
                     results.append(r)
                     continue
 
