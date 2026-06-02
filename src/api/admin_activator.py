@@ -5,17 +5,70 @@ import os
 from pathlib import Path
 from typing import Any
 
-# Must be set before pylclient reads it
-os.environ.setdefault("NSFLIGHT_UNMASKED_SECRETS", "1")
-
 from api import APIRequestError, APIResponseError
 
 try:
-    from pylclient.secrets.secret import Secret as _PylSecret
-    _PYLCLIENT_OK = True
+    import importlib.util as _importlib_util
+    import grpc as _grpc
+    from google.protobuf import json_format as _json_format
+
+    # secretsctserv installs its protos under a top-level `api/` namespace that
+    # collides with Octo's own `src/api/` package when running from src/. Load
+    # the generated files directly from their site-packages path to bypass this.
+    def _load_proto_module(name: str, rel_path: str):
+        import site
+        for sp in site.getsitepackages():
+            candidate = Path(sp) / rel_path
+            if candidate.exists():
+                spec = _importlib_util.spec_from_file_location(name, candidate)
+                mod = _importlib_util.module_from_spec(spec)
+                spec.loader.exec_module(mod)
+                return mod
+        raise ImportError(f"Cannot find {rel_path} in any site-packages directory")
+
+    _secrets_proto = _load_proto_module(
+        "secretsctserv_pb2",
+        "api/proto/secretsctserv/secretsctserv_pb2.py",
+    )
+    _secrets_grpc = _load_proto_module(
+        "secretsctserv_pb2_grpc",
+        "api/proto/secretsctserv/secretsctserv_pb2_grpc.py",
+    )
+    _SECRETSCTSERV_OK = True
 except ImportError:
-    _PylSecret = None  # type: ignore[assignment]
-    _PYLCLIENT_OK = False
+    _SECRETSCTSERV_OK = False
+
+_NSFLIGHT_TOKEN_PATH = Path.home() / ".config" / "nsflight" / "auth_token"
+_SECRETSCTSERV_ADDR = "secretsctserv.netskope.io:443"
+
+
+def _get_vault_secret(path: str) -> dict:
+    """Fetch a secret dict from secretsctserv via gRPC using the nsflight auth token."""
+    if not _SECRETSCTSERV_OK:
+        raise APIRequestError(
+            "secretsctserv/grpcio is not installed — run:\n"
+            "pip install -r requirements.txt && "
+            "pip install --no-cache-dir -r requirements_local.txt "
+            "--index-url https://artifactory-rd.netskope.io/artifactory/api/pypi/ns-pypi/simple"
+        )
+    try:
+        token = _NSFLIGHT_TOKEN_PATH.read_text().strip()
+    except FileNotFoundError:
+        raise APIRequestError(
+            f"nsflight auth token not found at {_NSFLIGHT_TOKEN_PATH} — run: nsflight login"
+        )
+    channel = _grpc.secure_channel(_SECRETSCTSERV_ADDR, _grpc.ssl_channel_credentials())
+    stub = _secrets_grpc.SecretServiceStub(channel)
+    try:
+        response = stub.GetSecret(
+            _secrets_proto.GetSecretRequest(path=path),
+            metadata=[("authorization", token)],
+        )
+    except _grpc.RpcError as e:
+        raise APIRequestError(f"Vault secret fetch failed for '{path}': {e.details()}") from e
+    finally:
+        channel.close()
+    return _json_format.MessageToDict(response).get("secretData", {})
 
 try:
     import psycopg2 as _psycopg2
@@ -235,22 +288,11 @@ def activate_admin_postgres(stack_env: str, admin_uuid: str, admin_password: str
     :param admin_password: Password to set on the admin account
     :returns: dict with per-operation outcomes
     """
-    if not _PYLCLIENT_OK:
-        raise APIRequestError(
-            "pylclient is not installed — run:\n"
-            "pip install --no-cache-dir -r requirements_local.txt "
-            "--index-url https://artifactory-rd.netskope.io/artifactory/api/pypi/ns-pypi/simple"
-        )
     if not _PSYCOPG2_OK:
         raise APIRequestError("psycopg2-binary is not installed — run: pip install -r requirements.txt")
 
     vault_key = stack_env.upper()
-    try:
-        all_creds = _PylSecret(_POSTGRES_VAULT_PATH).get_all()
-    except Exception as e:
-        raise APIRequestError(
-            f"Vault credential fetch failed (nsflightauth login required?): {e}"
-        ) from e
+    all_creds = _get_vault_secret(_POSTGRES_VAULT_PATH)
 
     if vault_key not in all_creds:
         raise APIRequestError(

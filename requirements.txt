@@ -4,3 +4,4 @@ pandas
 passlib
 psycopg2-binary
 pymysql
+grpcio
