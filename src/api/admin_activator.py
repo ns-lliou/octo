@@ -88,27 +88,32 @@ _POSTGRES_VAULT_PATH = "webui/aws_postgres_db"
 _POSTGRES_DB_NAME = "cpcs-authentication"
 _MARIADB_PORT = 3306
 
-_STACKS_LOCAL_PATH = Path(__file__).parent.parent / "config" / "stacks_local.json"
+_DB_CREDENTIALS_PATH = Path(__file__).parent.parent / "config" / "db_credentials.json"
+
+
+def db_credentials_file_exists() -> bool:
+    """Return True if db_credentials.json is present."""
+    return _DB_CREDENTIALS_PATH.exists()
 
 
 def _load_mariadb_creds(stack_env: str) -> tuple[str, str]:
-    """Load MariaDB user/password from stacks_local.json for the given stack."""
-    if not _STACKS_LOCAL_PATH.exists():
+    """Load MariaDB user/password from db_credentials.json for the given stack."""
+    if not _DB_CREDENTIALS_PATH.exists():
         raise APIRequestError(
-            f"stacks_local.json not found at {_STACKS_LOCAL_PATH} — "
-            f"copy src/config/stacks_local.json.example to stacks_local.json and fill in credentials"
+            f"db_credentials.json not found at {_DB_CREDENTIALS_PATH} — "
+            f"copy src/config/db_credentials.json.example to db_credentials.json and fill in credentials"
         )
-    local = json.loads(_STACKS_LOCAL_PATH.read_text())
+    local = json.loads(_DB_CREDENTIALS_PATH.read_text())
     stack = local.get(stack_env.lower())
     if not stack:
         raise APIRequestError(
-            f"No MariaDB credentials found for stack '{stack_env}' in stacks_local.json"
+            f"No MariaDB credentials found for stack '{stack_env}' in db_credentials.json"
         )
     user = stack.get("mariadb_user")
     password = stack.get("mariadb_password")
     if not user or not password:
         raise APIRequestError(
-            f"stacks_local.json entry for '{stack_env}' is missing mariadb_user or mariadb_password"
+            f"db_credentials.json entry for '{stack_env}' is missing mariadb_user or mariadb_password"
         )
     return user, password
 

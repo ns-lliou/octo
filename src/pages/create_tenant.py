@@ -8,7 +8,7 @@ from typing import Any
 import streamlit as st
 
 from api import APIRequestError, APIResponseError
-from api.admin_activator import activate_admin_mariadb, activate_admin_postgres, is_aws_migrated
+from api.admin_activator import activate_admin_mariadb, activate_admin_postgres, is_aws_migrated, db_credentials_file_exists
 from api.tenant_provisioner import (
     create_tenant,
     get_admin_uuid,
@@ -364,6 +364,8 @@ if mode == "Single":
             errors.append("Admin Email is required.")
         if not cust_fname or not cust_lname:
             errors.append("First and Last Name are required.")
+        if admin_password and not db_credentials_file_exists():
+            errors.append("Admin Password is set but db_credentials.json is missing — copy src/config/db_credentials.json.example to db_credentials.json and fill in credentials.")
         if errors:
             for e in errors:
                 st.error(e)
@@ -477,6 +479,10 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
             st.stop()
         if not isinstance(tenant_defs, list) or not tenant_defs:
             st.error("Input must be a non-empty JSON array.")
+            st.stop()
+
+        if admin_password and not db_credentials_file_exists():
+            st.error("Admin Password is set but db_credentials.json is missing — copy src/config/db_credentials.json.example to db_credentials.json and fill in credentials.")
             st.stop()
 
         required_fields = {"hostname", "orgName", "adminEmail", "custFName", "custLName"}
