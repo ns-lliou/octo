@@ -1,4 +1,3 @@
-import json
 import streamlit as st
 from api import APIRequestError, APIResponseError
 from api.ris_base import (
@@ -7,7 +6,7 @@ from api.ris_base import (
     list_config_object,
     get_config_object_by_id,
 )
-from config.paths import BASE_DIR
+from config.stacks import load_stacks
 
 
 def _flatten_consumer_list(elements: list) -> list[dict]:
@@ -53,8 +52,7 @@ def _flatten_references(references: list) -> list[dict]:
     return rows
 
 
-with open(BASE_DIR / "config" / "stacks.json") as f:
-    env_config = json.load(f)
+env_config = load_stacks()
 
 st.set_page_config(page_title="Query RIS Reference", layout="wide")
 st.title("Query RIS Reference")

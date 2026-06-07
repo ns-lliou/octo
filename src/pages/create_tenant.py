@@ -1,3 +1,4 @@
+import hashlib
 import json
 import re
 import time
@@ -18,15 +19,12 @@ from api.tenant_provisioner import (
     sync_dns,
 )
 from config.paths import BASE_DIR
+from config.stacks import get_knode_stacks
 
 ARTIFACTS_DIR = BASE_DIR.parent / "artifacts"
 ARTIFACTS_DIR.mkdir(exist_ok=True)
 
-with open(BASE_DIR / "config" / "stacks.json") as f:
-    env_config = json.load(f)
-
-# Only stacks that have knode support
-PROVISIONER_STACKS = {k: v for k, v in env_config.items() if "knodes" in v}
+KNODE_STACKS = get_knode_stacks()
 
 st.set_page_config(page_title="Create Tenant", layout="wide")
 st.title("Create Tenant")
@@ -43,8 +41,8 @@ Results are auto-saved to `artifacts/` and available for download.
 # ── Sidebar ────────────────────────────────────────────────────────────────────
 with st.sidebar:
     st.header("Controls")
-    env = st.selectbox("Stack", list(PROVISIONER_STACKS.keys()))
-    stack = PROVISIONER_STACKS[env]
+    env = st.selectbox("Stack", list(KNODE_STACKS.keys()))
+    stack = KNODE_STACKS[env]
     knode = st.selectbox("Knode", stack["knodes"])
     st.caption("Only QA01 and STG01 are supported for tenant provisioning via knode. Other stacks (Hippo, FedRAMP, etc.) use different provisioning paths not covered here.")
     mode = st.radio("Mode", ["Single", "Batch"])
@@ -60,6 +58,15 @@ def _fmt_elapsed(seconds: float) -> str:
     if seconds < 60:
         return f"{seconds}s"
     return f"{seconds // 60}m {seconds % 60}s"
+
+
+def _make_fingerprint(data: dict) -> str:
+    return hashlib.sha256(json.dumps(data, sort_keys=True).encode()).hexdigest()[:16]
+
+
+def _clear_preflight() -> None:
+    st.session_state.pop("_preflight_pending", None)
+    st.session_state.pop("_preflight_fingerprint", None)
 
 
 def _build_fqdn(hostname: str, fqdn_base: str) -> str:
@@ -324,6 +331,10 @@ def _preflight_confirm_section(pending: dict) -> None:
 
 # ── Single mode ────────────────────────────────────────────────────────────────
 if mode == "Single":
+    # Clear any stale Batch preflight when switching modes
+    if st.session_state.get("_preflight_pending", {}).get("mode") == "Batch":
+        _clear_preflight()
+
     st.subheader("Tenant Definition")
     col1, col2 = st.columns(2)
     with col1:
@@ -352,6 +363,21 @@ if mode == "Single":
         seats = st.text_input("Seats", value="10")
         fed_ramp = st.selectbox("FedRAMP Tenant", ["0", "1"], index=0)
 
+    # Detect stale preflight before rendering the Run button so it re-enables immediately
+    if st.session_state.get("_preflight_pending", {}).get("mode") == "Single":
+        current_fp = _make_fingerprint({
+            "mode": "Single", "env": env, "knode": knode,
+            "hostname": hostname.strip(), "org_name": org_name,
+            "admin_email": admin_email, "cust_fname": cust_fname,
+            "cust_lname": cust_lname, "domains": domains_input,
+            "org_desc": org_desc, "country": country, "location": location,
+            "state": state_input, "industry": industry, "paid": paid,
+            "seats": seats, "fed_ramp": fed_ramp, "has_password": bool(admin_password),
+        })
+        if current_fp != st.session_state.get("_preflight_fingerprint"):
+            _clear_preflight()
+            st.warning("Inputs changed after preflight review — please click Run again to review the updated payload.")
+
     run_clicked = st.button("Run", type="primary", disabled=bool(st.session_state.get("_preflight_pending") or st.session_state.get("_preflight_running_data")))
 
     if run_clicked:
@@ -367,6 +393,7 @@ if mode == "Single":
         if admin_password and not db_credentials_file_exists():
             errors.append("Admin Password is set but db_credentials.json is missing — copy src/config/db_credentials.json.example to db_credentials.json and fill in credentials.")
         if errors:
+            _clear_preflight()
             for e in errors:
                 st.error(e)
             st.stop()
@@ -392,6 +419,15 @@ if mode == "Single":
             "url_filtering_enabled": "1",
             "fed_ramp_tenant": fed_ramp,
         }
+        fp = _make_fingerprint({
+            "mode": "Single", "env": env, "knode": knode,
+            "hostname": hostname.strip(), "org_name": org_name,
+            "admin_email": admin_email, "cust_fname": cust_fname,
+            "cust_lname": cust_lname, "domains": domains_input,
+            "org_desc": org_desc, "country": country, "location": location,
+            "state": state_input, "industry": industry, "paid": paid,
+            "seats": seats, "fed_ramp": fed_ramp, "has_password": bool(admin_password),
+        })
         st.session_state["_preflight_pending"] = {
             "mode": "Single",
             "env": env,
@@ -401,6 +437,7 @@ if mode == "Single":
             "admin_email": admin_email,
             "admin_password": admin_password,
         }
+        st.session_state["_preflight_fingerprint"] = fp
 
     if st.session_state.get("_preflight_pending", {}).get("mode") == "Single":
         _preflight_confirm_section(st.session_state["_preflight_pending"])
@@ -446,6 +483,9 @@ if mode == "Single":
 
 # ── Batch mode ─────────────────────────────────────────────────────────────────
 else:
+    # Clear any stale Single preflight when switching modes
+    if st.session_state.get("_preflight_pending", {}).get("mode") == "Single":
+        _clear_preflight()
     st.subheader("Batch Tenant Definitions")
     st.markdown("""
 Paste a JSON array. Each object requires: `hostname`, `orgName`, `adminEmail`, `custFName`, `custLName`.
@@ -467,22 +507,36 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
         type="password",
         help="If provided, the admin account is activated directly via SQL — no email click required. Leave blank to use the standard email verification flow.",
     )
+    # Detect stale preflight before rendering the Run Batch button so it re-enables immediately
+    if st.session_state.get("_preflight_pending", {}).get("mode") == "Batch":
+        current_fp = _make_fingerprint({
+            "mode": "Batch", "env": env, "knode": knode,
+            "batch_input": batch_input.strip(), "has_password": bool(admin_password),
+        })
+        if current_fp != st.session_state.get("_preflight_fingerprint"):
+            _clear_preflight()
+            st.warning("Inputs changed after preflight review — please click Run Batch again to review the updated payload.")
+
     run_batch_clicked = st.button("Run Batch", type="primary", disabled=bool(st.session_state.get("_preflight_pending") or st.session_state.get("_preflight_running_data")))
 
     if run_batch_clicked:
         if not batch_input.strip():
+            _clear_preflight()
             st.error("Please provide a JSON array of tenant definitions.")
             st.stop()
         try:
             tenant_defs = json.loads(batch_input)
         except json.JSONDecodeError as e:
+            _clear_preflight()
             st.error(f"Invalid JSON: {e}")
             st.stop()
         if not isinstance(tenant_defs, list) or not tenant_defs:
+            _clear_preflight()
             st.error("Input must be a non-empty JSON array.")
             st.stop()
 
         if admin_password and not db_credentials_file_exists():
+            _clear_preflight()
             st.error("Admin Password is set but db_credentials.json is missing — copy src/config/db_credentials.json.example to db_credentials.json and fill in credentials.")
             st.stop()
 
@@ -490,17 +544,23 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
         for i, td in enumerate(tenant_defs):
             missing = required_fields - set(td.keys())
             if missing:
+                _clear_preflight()
                 st.error(f"Tenant #{i+1} missing required fields: {missing}")
                 st.stop()
 
         org_names = [td["orgName"] for td in tenant_defs]
         duplicate_org_names = {n for n in org_names if org_names.count(n) > 1}
         if duplicate_org_names:
+            _clear_preflight()
             st.error(f"Duplicate `orgName` values detected: {', '.join(sorted(duplicate_org_names))} — each tenant must have a unique orgName to avoid web UI routing failures.")
             st.stop()
 
         payloads = [_build_payload(td, stack["stack_fqdn_base"]) for td in tenant_defs]
         admin_emails = [td["adminEmail"] for td in tenant_defs]
+        fp = _make_fingerprint({
+            "mode": "Batch", "env": env, "knode": knode,
+            "batch_input": batch_input.strip(), "has_password": bool(admin_password),
+        })
         st.session_state["_preflight_pending"] = {
             "mode": "Batch",
             "env": env,
@@ -510,6 +570,7 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
             "admin_emails": admin_emails,
             "admin_password": admin_password,
         }
+        st.session_state["_preflight_fingerprint"] = fp
 
     if st.session_state.get("_preflight_pending", {}).get("mode") == "Batch":
         _preflight_confirm_section(st.session_state["_preflight_pending"])

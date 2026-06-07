@@ -1,14 +1,11 @@
-import json
 import streamlit as st
 from api import APIRequestError, APIResponseError
 from api.client_feature_flag import get_feature_flags, set_feature_flag
 from api.regenerate_proxy_config import regenerate_proxy_config
 from api.regenerate_dlp_config import regenerate_dlp_config
-from config.paths import BASE_DIR
+from config.stacks import load_stacks
 
-
-with open(BASE_DIR / "config" / "stacks.json") as f:
-    env_config = json.load(f)
+env_config = load_stacks()
 
 # Setting page config and title
 st.set_page_config(page_title="Client Feature Flag", layout="wide")

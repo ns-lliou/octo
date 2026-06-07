@@ -1,15 +1,12 @@
 import base64
-import json
 
 import requests
 import streamlit as st
 
 from api import APIRequestError, APIResponseError
-from config.paths import BASE_DIR
+from config.stacks import load_stacks
 
-
-with open(BASE_DIR / "config" / "stacks.json") as f:
-    _env_config = json.load(f)
+_env_config = load_stacks()
 
 # session_state keys
 #   webui_username                    — last used username (persisted)

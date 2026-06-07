@@ -1,13 +1,10 @@
-import json
 import streamlit as st
 import pandas as pd
 from api import APIRequestError, APIResponseError
 from api.get_all_tenants_in_stack import get_all_tenants_in_stack
-from config.paths import BASE_DIR
+from config.stacks import load_stacks
 
-
-with open(BASE_DIR / "config" / "stacks.json") as f:
-    env_config = json.load(f)
+env_config = load_stacks()
 
 st.set_page_config(page_title="Show Tenant List", layout="wide")
 st.title("Show Tenant List")
