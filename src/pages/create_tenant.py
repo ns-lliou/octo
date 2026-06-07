@@ -13,11 +13,11 @@ from api.admin_activator import activate_admin_mariadb, activate_admin_postgres,
 from api.tenant_provisioner import (
     create_tenant,
     get_admin_uuid,
-    ping_knode,
     refresh_cluster_mapping,
     send_verification_email,
     sync_dns,
 )
+from operations.tsh_client import ping_knode
 from config.paths import BASE_DIR
 from config.stacks import get_knode_stacks
 
