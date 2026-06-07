@@ -458,6 +458,7 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
 ]
 ```
 """)
+    st.warning("⚠️ **Each tenant in a batch must have a unique `orgName`.** Reusing the same `orgName` across tenants can cause provisioner registration failures for subsequent tenants. Tip: match `orgName` to `hostname` to keep them distinct.")
 
     batch_input = st.text_area("Tenant JSON Array", height=200, placeholder='[{"hostname": "...", ...}]')
     admin_password = st.text_input(
@@ -491,6 +492,12 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
             if missing:
                 st.error(f"Tenant #{i+1} missing required fields: {missing}")
                 st.stop()
+
+        org_names = [td["orgName"] for td in tenant_defs]
+        duplicate_org_names = {n for n in org_names if org_names.count(n) > 1}
+        if duplicate_org_names:
+            st.error(f"Duplicate `orgName` values detected: {', '.join(sorted(duplicate_org_names))} — each tenant must have a unique orgName to avoid web UI routing failures.")
+            st.stop()
 
         payloads = [_build_payload(td, stack["stack_fqdn_base"]) for td in tenant_defs]
         admin_emails = [td["adminEmail"] for td in tenant_defs]
