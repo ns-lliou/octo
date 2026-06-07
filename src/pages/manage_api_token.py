@@ -1,4 +1,4 @@
-from datetime import datetime
+from datetime import datetime, timezone
 
 import streamlit as st
 from api import APIRequestError, APIResponseError
@@ -103,7 +103,16 @@ token_info = ns_user.get("apiAccessToken")
 col1, col2, col3 = st.columns(3)
 col1.metric("User", me.get("userName", "—"))
 col2.metric("Role", ns_user.get("role", {}).get("display", "—"))
-col3.metric("Token Status", "Active" if token_info else "None")
+if token_info:
+    expires_on_str = token_info.get("expiresOn")
+    if expires_on_str:
+        expires_dt = datetime.fromisoformat(expires_on_str.replace("Z", "+00:00"))
+        token_status = "Expired" if expires_dt <= datetime.now(timezone.utc) else "Active"
+    else:
+        token_status = "Active"
+else:
+    token_status = "None"
+col3.metric("Token Status", token_status)
 
 if token_info:
     col_a, col_b = st.columns(2)

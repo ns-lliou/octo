@@ -352,7 +352,7 @@ if mode == "Single":
         seats = st.text_input("Seats", value="10")
         fed_ramp = st.selectbox("FedRAMP Tenant", ["0", "1"], index=0)
 
-    run_clicked = st.button("Run", type="primary", disabled=bool(st.session_state.get("_preflight_pending")))
+    run_clicked = st.button("Run", type="primary", disabled=bool(st.session_state.get("_preflight_pending") or st.session_state.get("_preflight_running_data")))
 
     if run_clicked:
         errors = []
@@ -466,7 +466,7 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
         type="password",
         help="If provided, the admin account is activated directly via SQL — no email click required. Leave blank to use the standard email verification flow.",
     )
-    run_batch_clicked = st.button("Run Batch", type="primary", disabled=bool(st.session_state.get("_preflight_pending")))
+    run_batch_clicked = st.button("Run Batch", type="primary", disabled=bool(st.session_state.get("_preflight_pending") or st.session_state.get("_preflight_running_data")))
 
     if run_batch_clicked:
         if not batch_input.strip():
@@ -572,6 +572,9 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
             except (APIRequestError, APIResponseError) as e:
                 r["steps"]["1_create_tenant"] = {"status": "error", "error": str(e)}
                 r["overall_status"] = "failed_at_step_1"
+            if not r["tenant_id"] and r["overall_status"] != "failed_at_step_1":
+                r["steps"]["1_create_tenant"].setdefault("warning", "tenant_id not found in response — skipping dependent steps")
+                r["overall_status"] = "failed_at_step_1"
             last_elapsed = time.time() - t0
             r["elapsed_seconds"] = round(last_elapsed)
             create_results.append(r)
@@ -579,94 +582,109 @@ Optional: `domains`, `orgDesc`, `country`, `location`, `state`, `industry`, `pai
 
         # Step 2: Single cluster mapping refresh (only if at least one create succeeded)
         successful_creates = [r for r in create_results if r["tenant_id"] is not None]
-        status_placeholder.write("Step 2: Refreshing cluster mapping (single call)...")
-        try:
-            cm_data = refresh_cluster_mapping(knode)
-            cm_result = {"status": "ok", "response": cm_data}
-        except (APIRequestError, APIResponseError) as e:
-            cm_result = {"status": "error", "error": str(e)}
 
-        progress.progress(2 / 4, text="Cluster mapping refreshed")
-
-        # Step 3 + 4: Per-tenant DNS sync and email
-        for i, r in enumerate(create_results):
-            r["steps"]["2_cluster_mapping"] = cm_result
-            if cm_result["status"] == "error":
-                r["overall_status"] = "failed_at_step_2"
-                results.append(r)
-                continue
-            if r["overall_status"] == "failed_at_step_1":
-                results.append(r)
-                continue
-
-            tenant_id = str(r["tenant_id"])
-            fqdn = r["fqdn"]
-            admin_email = r["admin_email"]
-
-            # Step 3: DNS sync
-            status_placeholder.write(f"Step 3 [{i+1}/{len(create_results)}]: DNS sync for `{fqdn}`...")
+        if not successful_creates:
+            skip_note = "Skipped: no tenant creation succeeded."
+            for r in create_results:
+                r["steps"]["2_cluster_mapping"] = {"status": "skipped", "note": skip_note}
+                r["steps"]["3_dns_sync"] = {"status": "skipped", "note": skip_note}
+                r["steps"]["4a_get_admin_uuid"] = {"status": "skipped", "note": skip_note}
+                r["steps"]["4b_send_verification_email"] = {"status": "skipped", "note": skip_note}
+                if pending.get("admin_password", ""):
+                    r["steps"]["5_activate_admin"] = {"status": "skipped", "note": skip_note}
+                if r.get("overall_status") not in ("failed_at_step_1", "incomplete"):
+                    r["overall_status"] = "failed"
+            results = list(create_results)
+        else:
+            status_placeholder.write("Step 2: Refreshing cluster mapping (single call)...")
             try:
-                data = sync_dns(knode, fqdn, stack["gslb_home_pop"])
-                r["steps"]["3_dns_sync"] = {"status": "ok", "response": data}
+                cm_data = refresh_cluster_mapping(knode)
+                cm_result = {"status": "ok", "response": cm_data}
             except (APIRequestError, APIResponseError) as e:
-                r["steps"]["3_dns_sync"] = {"status": "error", "error": str(e)}
-                r["overall_status"] = "failed_at_step_3"
-                results.append(r)
-                continue
+                cm_result = {"status": "error", "error": str(e)}
 
-            # Step 4a: Get admin UUID (cached per email)
-            admin_uuid = st.session_state.get("_admin_uuid_cache", {}).get(admin_email)
-            if not admin_uuid:
-                status_placeholder.write(f"Step 4a: Fetching admin UUID for `{admin_email}`...")
-                try:
-                    admin_uuid = get_admin_uuid(knode, stack["ms_platform_fqdn"], admin_email, tenant_id)
-                    if "_admin_uuid_cache" not in st.session_state:
-                        st.session_state["_admin_uuid_cache"] = {}
-                    st.session_state["_admin_uuid_cache"][admin_email] = admin_uuid
-                    r["steps"]["4a_get_admin_uuid"] = {"status": "ok", "uuid": admin_uuid}
-                except (APIRequestError, APIResponseError) as e:
-                    r["steps"]["4a_get_admin_uuid"] = {"status": "error", "error": str(e)}
-                    r["overall_status"] = "failed_at_step_4a"
+            progress.progress(2 / 4, text="Cluster mapping refreshed")
+
+            # Step 3 + 4: Per-tenant DNS sync and email
+            for i, r in enumerate(create_results):
+                r["steps"]["2_cluster_mapping"] = cm_result
+                if cm_result["status"] == "error":
+                    r["overall_status"] = "failed_at_step_2"
                     results.append(r)
                     continue
-            else:
-                r["steps"]["4a_get_admin_uuid"] = {"status": "ok_cached", "uuid": admin_uuid}
+                if r["overall_status"] == "failed_at_step_1":
+                    results.append(r)
+                    continue
 
-            # Step 4b: Send verification email (skipped when admin_password is set)
-            batch_password = pending.get("admin_password", "")
-            if batch_password:
-                r["steps"]["4b_send_verification_email"] = {"status": "skipped", "note": "SQL activation will be used instead"}
-            else:
-                status_placeholder.write(f"Step 4b [{i+1}/{len(create_results)}]: Sending verification email for tenant `{tenant_id}`...")
+                tenant_id = str(r["tenant_id"])
+                fqdn = r["fqdn"]
+                admin_email = r["admin_email"]
+
+                # Step 3: DNS sync
+                status_placeholder.write(f"Step 3 [{i+1}/{len(create_results)}]: DNS sync for `{fqdn}`...")
                 try:
-                    data = send_verification_email(knode, stack["ms_platform_fqdn"], admin_uuid, tenant_id)
-                    r["steps"]["4b_send_verification_email"] = {"status": "ok", "response": data}
+                    data = sync_dns(knode, fqdn, stack["gslb_home_pop"])
+                    r["steps"]["3_dns_sync"] = {"status": "ok", "response": data}
                 except (APIRequestError, APIResponseError) as e:
-                    err_str = str(e)
-                    if "already verified" in err_str.lower():
-                        r["steps"]["4b_send_verification_email"] = {"status": "already_verified", "note": err_str}
-                    else:
-                        r["steps"]["4b_send_verification_email"] = {"status": "error", "error": err_str}
-                        r["overall_status"] = "failed_at_step_4b"
+                    r["steps"]["3_dns_sync"] = {"status": "error", "error": str(e)}
+                    r["overall_status"] = "failed_at_step_3"
+                    results.append(r)
+                    continue
+
+                # Step 4a: Get admin UUID (cached per email)
+                admin_uuid = st.session_state.get("_admin_uuid_cache", {}).get(admin_email)
+                if not admin_uuid:
+                    status_placeholder.write(f"Step 4a: Fetching admin UUID for `{admin_email}`...")
+                    try:
+                        admin_uuid = get_admin_uuid(knode, stack["ms_platform_fqdn"], admin_email, tenant_id)
+                        if "_admin_uuid_cache" not in st.session_state:
+                            st.session_state["_admin_uuid_cache"] = {}
+                        st.session_state["_admin_uuid_cache"][admin_email] = admin_uuid
+                        r["steps"]["4a_get_admin_uuid"] = {"status": "ok", "uuid": admin_uuid}
+                    except (APIRequestError, APIResponseError) as e:
+                        r["steps"]["4a_get_admin_uuid"] = {"status": "error", "error": str(e)}
+                        r["overall_status"] = "failed_at_step_4a"
+                        results.append(r)
+                        continue
+                else:
+                    r["steps"]["4a_get_admin_uuid"] = {"status": "ok_cached", "uuid": admin_uuid}
+
+                # Step 4b: Send verification email (skipped when admin_password is set)
+                batch_password = pending.get("admin_password", "")
+                if batch_password:
+                    r["steps"]["4b_send_verification_email"] = {"status": "skipped", "note": "SQL activation will be used instead"}
+                else:
+                    status_placeholder.write(f"Step 4b [{i+1}/{len(create_results)}]: Sending verification email for tenant `{tenant_id}`...")
+                    try:
+                        data = send_verification_email(knode, stack["ms_platform_fqdn"], admin_uuid, tenant_id)
+                        r["steps"]["4b_send_verification_email"] = {"status": "ok", "response": data}
+                    except (APIRequestError, APIResponseError) as e:
+                        err_str = str(e)
+                        if "already verified" in err_str.lower():
+                            r["steps"]["4b_send_verification_email"] = {"status": "already_verified", "note": err_str}
+                        else:
+                            r["steps"]["4b_send_verification_email"] = {"status": "error", "error": err_str}
+                            r["overall_status"] = "failed_at_step_4b"
+                            results.append(r)
+                            continue
+
+                # Step 5: Activate admin via SQL (auto-detects Postgres vs MariaDB path)
+                if batch_password:
+                    status_placeholder.write(f"Step 5 [{i+1}/{len(create_results)}]: Activating admin for tenant `{tenant_id}`...")
+                    try:
+                        data = _activate_admin(env, stack, admin_uuid, admin_email, r["hostname"], batch_password)
+                        r["steps"]["5_activate_admin"] = {"status": "ok", "response": data}
+                    except (APIRequestError, APIResponseError) as e:
+                        r["steps"]["5_activate_admin"] = {"status": "error", "error": str(e)}
+                        r["overall_status"] = "failed_at_step_5"
                         results.append(r)
                         continue
 
-            # Step 5: Activate admin via SQL (auto-detects Postgres vs MariaDB path)
-            if batch_password:
-                status_placeholder.write(f"Step 5 [{i+1}/{len(create_results)}]: Activating admin for tenant `{tenant_id}`...")
-                try:
-                    data = _activate_admin(env, stack, admin_uuid, admin_email, r["hostname"], batch_password)
-                    r["steps"]["5_activate_admin"] = {"status": "ok", "response": data}
-                except (APIRequestError, APIResponseError) as e:
-                    r["steps"]["5_activate_admin"] = {"status": "error", "error": str(e)}
-                    r["overall_status"] = "failed_at_step_5"
-                    results.append(r)
-                    continue
+                step1_incomplete = "warning" in r["steps"].get("1_create_tenant", {})
+                r["overall_status"] = "incomplete" if step1_incomplete else "success"
+                results.append(r)
 
-            r["overall_status"] = "success"
-            results.append(r)
-
-            progress.progress((2 + (i + 1) * 2) / (len(create_results) * 4 + 0.01), text=f"Completed {i+1}/{len(create_results)}")
+                progress.progress((2 + (i + 1) * 2) / (len(create_results) * 4 + 0.01), text=f"Completed {i+1}/{len(create_results)}")
 
         progress.progress(1.0, text="Done")
         status_placeholder.empty()

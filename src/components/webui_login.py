@@ -13,7 +13,6 @@ with open(BASE_DIR / "config" / "stacks.json") as f:
 
 # session_state keys
 #   webui_username                    — last used username (persisted)
-#   webui_password                    — last used password (persisted)
 #   webui_current_hostname            — hostname of the active session
 #   webui_ci_session_{hostname}       — ci_session cookie per hostname
 
@@ -83,7 +82,7 @@ def _login_dialog() -> None:
             st.caption(f"Hostname: `{hostname}`")
 
     username = st.text_input("Username", value=st.session_state.get("webui_username", ""))
-    password = st.text_input("Password", type="password", value=st.session_state.get("webui_password", ""))
+    password = st.text_input("Password", type="password")
 
     if st.button("Login", type="primary", disabled=not hostname):
         if not username or not password:
@@ -100,7 +99,6 @@ def _login_dialog() -> None:
                 return
 
         st.session_state["webui_username"] = username
-        st.session_state["webui_password"] = password
         st.session_state["webui_current_hostname"] = hostname
         st.session_state[f"webui_ci_session_{hostname}"] = ci_session
         st.rerun()

@@ -1,9 +1,15 @@
 venv/
+.venv/
 __pycache__/
 *.pyc
+*.pyo
 .streamlit/
 artifacts/
 .DS_Store
+._*
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
 src/config/db_credentials.json
 CLAUDE.md
 .claude/
